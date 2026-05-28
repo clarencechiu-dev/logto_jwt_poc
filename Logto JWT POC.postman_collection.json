@@ -1,0 +1,1945 @@
+{
+  "info": {
+    "_postman_id": "92e4a3ba-3b27-450b-9fd6-dce2ec3ea1eb",
+    "name": "Logto JWT POC",
+    "description": "NestJS POC 專案，復刻 hermes-api Logto Experience API flow，並測試 RBAC、Organization、API Resources 功能。\n\n**認證流程：**\n1. POST /auth/send-otp — 發送手機 OTP\n2. POST /auth/verify-otp — 驗證 OTP\n3. POST /auth/exchange — 換取 access_token + refresh_token\n4. POST /auth/refresh — 刷新 token（可帶 organizationId 取得 org-scoped token）\n\n**Collection Variables:**\n- `baseUrl` — API server URL（預設 http://localhost:3000）\n- `accessToken` — 由 exchange / refresh 步驟自動寫入\n- `refreshToken` — 由 exchange / refresh 步驟自動寫入",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "30558130"
+  },
+  "item": [
+    {
+      "name": "auth — Experience API Flow（Phone OTP Login）",
+      "item": [
+        {
+          "name": "0. Login（取得 sentryToken）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.wemoSentryToken) {",
+                  "    pm.environment.set('wemoSentryToken', res.wemoSentryToken);",
+                  "    console.log('wemoSentryToken saved:', res.wemoSentryToken);",
+                  "}else{",
+                  "    console.log('wemoSentryToken not found in response');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fcmToken\": \"fp97zbTddUg_lgpQgbKMxN:APA91bHWkB86--xf60hBfXaeF-P4v0xTW81Dw3KMW00W2MNTYa8B3gt1-41eHEhmhND_4WiaVJQWbUTunhOqa2J-KLMQ2RnXian1a99kd5R7G0DmSiF00VQ\",\n  \"deviceId\": \"49516889-5A72-4E35-9FBD-01B9E77781A2\",\n  \"idCard\": \"A171994101\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "**流程第 0 步。** 使用 idCard + deviceId 取得 sentryToken。\n\n後續所有步驟（send-otp、verify-otp、exchange）都需帶此 sentryToken。\n\n對應 hermes-api: postLogin → login() → _genSentryToken\n\n回傳的 `sentryToken` 會自動存入 Collection Variable。"
+          },
+          "response": []
+        },
+        {
+          "name": "1. Send OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.verificationId) {",
+                  "    pm.environment.set('verificationId', res.verificationId);",
+                  "    console.log('verificationId saved:', res.verificationId);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0980611322\",\n  \"sentryToken\": \"{{sentryToken}}\",\n  \"resource\": \"http://localhost:3000/application/users\",\n  \"organizationId\": \"{{organizationId}}\",\n  \"scope\":[\n    \"read:application\",\n    \"write:application\",\n    \"delete:application\",\n    \"admin:delete:application\",\n    \"admin:read:application\",\n    \"admin:write:application\",\n    \"org:delete:application\",\n    \"org:read:application\",\n    \"org:write:application\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/send-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "send-otp"
+              ]
+            },
+            "description": "初始化 Logto OIDC session 並透過 Experience API 發送 SMS OTP。\n\n回傳 `verificationId` 會自動存入 Collection Variable，供下一步使用。"
+          },
+          "response": []
+        },
+        {
+          "name": "2. Verify OTP",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.sendRequest(",
+                  "    'http://127.0.0.1:10010/logto/get/code',",
+                  "    function(err,res){",
+                  "",
+                  "        const data=res.json()",
+                  "        console.log('data', data)",
+                  "",
+                  "        if (data.data.code) {",
+                  "            console.log('OTP code received:', data.data.code);",
+                  "            pm.environment.set(",
+                  "                'otp_code',",
+                  "                data.data.code",
+                  "            )",
+                  "            console.log('otp_code saved');",
+                  "        } else {",
+                  "            console.log('Error getting OTP code');",
+                  "        }",
+                  "    }",
+                  ")"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sentryToken\": \"{{sentryToken}}\",\n  \"code\": \"{{otp_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "驗證使用者輸入的 OTP 並完成 identification。\n\n`verificationId` 使用上一步自動儲存的 Collection Variable。"
+          },
+          "response": []
+        },
+        {
+          "name": "3. Exchange Token（Global API Resource）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken) {",
+                  "    pm.environment.set('accessToken', res.accessToken);",
+                  "    console.log('accessToken saved');",
+                  "}",
+                  "if (res.refreshToken) {",
+                  "    pm.environment.set('refreshToken', res.refreshToken);",
+                  "    console.log('refreshToken saved');",
+                  "}else{",
+                  "    console.log('No refreshToken received')",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sentryToken\": \"{{sentryToken}}\",\n  \"resource\": \"{{resource}}\",\n  \"organizationId\": \"{{organizationId}}\",\n  \"scope\":[\n    \"read:application\",\n    \"write:application\",\n    \"delete:application\",\n    \"admin:delete:application\",\n    \"admin:read:application\",\n    \"admin:write:application\",\n    \"org:delete:application\",\n    \"org:read:application\",\n    \"org:write:application\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/exchange",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "exchange"
+              ]
+            },
+            "description": "完成 OIDC flow，取得 access_token（Type 1: Global API Resource）與 refresh_token。\n\n`accessToken` / `refreshToken` 會自動存入 Collection Variables。"
+          },
+          "response": []
+        },
+        {
+          "name": "3b. Exchange Token（Org-level API Resource）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', res.accessToken);",
+                  "    console.log('accessToken saved');",
+                  "}",
+                  "if (res.refreshToken) {",
+                  "    pm.collectionVariables.set('refreshToken', res.refreshToken);",
+                  "    console.log('refreshToken saved');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sentryToken\": \"{{sentryToken}}\",\n  \"organizationId\": \"{{organizationId}}\"\n//   \"scope\":[\n//     \"read:application\",\n//     \"write:application\",\n//     \"admin:delete:application\",\n//     \"admin:read:application\",\n//     \"admin:write:application\",\n//     \"org:delete:application\",\n//     \"org:read:application\",\n//     \"org:write:application\"\n//   ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/exchange",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "exchange"
+              ]
+            },
+            "description": "帶入 `organizationId` 換取 org-scoped access token（Type 3: Organization-level API Resource）。\n\nToken payload 中會包含 `organization_id` claim。"
+          },
+          "response": []
+        },
+        {
+          "name": "4. Refresh Token（Global API Resource）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', res.accessToken);",
+                  "    console.log('accessToken refreshed');",
+                  "}",
+                  "if (res.refreshToken) {",
+                  "    pm.collectionVariables.set('refreshToken', res.refreshToken);",
+                  "    console.log('refreshToken updated');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"resource\": \"{{resource}}\"\n//   \"scope\": [\n//     \"read:application\",\n//     \"write:application\",\n//     \"admin:delete:application\",\n//     \"admin:read:application\",\n//     \"admin:write:application\",\n//     \"org:delete:application\",\n//     \"org:read:application\",\n//     \"org:write:application\"\n//   ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "使用 refresh_token 取得新的 access_token（Type 1: Global API Resource）。"
+          },
+          "response": []
+        },
+        {
+          "name": "4b. Refresh Token（Org-level API Resource）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken && res.accessToken !== pm.environment.get('accessToken')) {",
+                  "    pm.environment.set('accessToken', res.accessToken);",
+                  "    console.log('org-scoped accessToken refreshed');",
+                  "}",
+                  "if (res.refreshToken && res.refreshToken !== pm.environment.get('refreshToken')) {",
+                  "    pm.environment.set('refreshToken', res.refreshToken);",
+                  "    console.log('refreshToken updated');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"organizationId\": \"{{organizationId}}\",\n  \"resource\": \"{{resource}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "帶入 `organizationId` 刷新 token（Type 3: Organization-level API Resource）。\n\nToken payload 中會包含 `organization_id` claim。"
+          },
+          "response": []
+        },
+        {
+          "name": "4c. Refresh Token（with custom resource & scopes）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken && res.accessToken !== pm.environment.get('accessToken')) {",
+                  "    pm.environment.set('accessToken', res.accessToken);",
+                  "    console.log('org-scoped accessToken refreshed');",
+                  "}",
+                  "if (res.refreshToken && res.refreshToken !== pm.environment.get('refreshToken')) {",
+                  "    pm.environment.set('refreshToken', res.refreshToken);",
+                  "    console.log('refreshToken updated');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"organizationId\": \"{{organizationId}}\",\n//   \"resource\": \"{{resource}}\",\n  \"scope\":[\n    \"admin:delete:application\",\n    \"admin:read:application\",\n    \"admin:write:application\",\n    \"org:delete:application\",\n    \"org:read:application\",\n    \"org:write:application\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "指定 resource indicator 與 scopes 刷新 token（完整參數版）。"
+          },
+          "response": []
+        }
+      ],
+      "description": "Phone OTP 登入完整流程：send-otp → verify-otp → exchange → refresh"
+    },
+    {
+      "name": "token — JWT 驗證與 Decode",
+      "item": [
+        {
+          "name": "Validate Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{accessToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/token/validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "token",
+                "validate"
+              ]
+            },
+            "description": "使用 Logto JWKS 驗證 JWT 簽章，並檢查 iss、aud、exp、scope。\n\n回傳解析後的 claims：sub、organizationId、scopes、audience 等。\n\n`audience` 與 `requiredScopes` 為選填。"
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Token（Org non-API — aud: urn:logto:organization:...）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{accessToken}}\",\n  \"audience\": \"urn:logto:organization:{{organizationId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/token/validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "token",
+                "validate"
+              ]
+            },
+            "description": "驗證 Type 2（Organization non-API Permissions）token。\n\naud 格式為 `urn:logto:organization:{org_id}`。"
+          },
+          "response": []
+        },
+        {
+          "name": "Decode Token（不驗簽）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/token/decode?token={{accessToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "token",
+                "decode"
+              ],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "description": "JWT token（eyJ...）"
+                }
+              ]
+            },
+            "description": "快速 decode JWT header 與 payload，不驗證簽章。\n\n適合開發時查看 token 中的 sub、scope、aud、organization_id 等 claims。"
+          },
+          "response": []
+        }
+      ],
+      "description": "驗證 Logto 簽發的 JWT，或快速 decode token 內容。"
+    },
+    {
+      "name": "users — User Management",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "搜尋關鍵字（可選）",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "查詢 Logto 使用者列表，可用 `search` 過濾。"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "    pm.collectionVariables.set('logtoUserId', res.id);",
+                  "    console.log('logtoUserId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{logtoUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{logtoUserId}}"
+              ]
+            },
+            "description": "以 Logto User ID 查詢單一使用者詳情。"
+          },
+          "response": []
+        },
+        {
+          "name": "Sync User（upsert by externalId）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "    pm.collectionVariables.set('logtoUserId', res.id);",
+                  "    console.log('logtoUserId saved:', res.id, '| isNew:', res.isNew);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"externalId\": \"hermes-user-123\",\n  \"phone\": \"0912345678\",\n  \"email\": \"user@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "sync"
+              ]
+            },
+            "description": "以 `externalId` 查詢或建立 Logto 使用者（upsert）。\n\nLogto username 格式為 `hermes_<externalId>`。\n\n回傳 `{ id, isNew }`，`logtoUserId` 會自動存入 Collection Variable。"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{logtoUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{logtoUserId}}"
+              ]
+            },
+            "description": "永久刪除 Logto 使用者。"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Organizations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{logtoUserId}}/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{logtoUserId}}",
+                "organizations"
+              ]
+            },
+            "description": "取得指定使用者所屬的所有組織清單。"
+          },
+          "response": []
+        }
+      ],
+      "description": "透過 Logto Management API 管理使用者。"
+    },
+    {
+      "name": "organizations — 多租戶 Organization 管理",
+      "item": [
+        {
+          "name": "List Organizations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations"
+              ]
+            },
+            "description": "列出 Logto 租戶中的所有組織。"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Organization Roles（Organization Template）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "roles"
+              ]
+            },
+            "description": "列出 Organization Template 中定義的所有角色（如 Admin、Member、Viewer）。\n\n參考：https://docs.logto.io/authorization/organization-template"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Organization",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "    pm.collectionVariables.set('organizationId', res.id);",
+                  "    console.log('organizationId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corp\",\n  \"description\": \"A sample organization\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations"
+              ]
+            },
+            "description": "在 Logto 中建立新組織。組織自動繼承 Organization Template 的角色與權限。\n\n回傳的 `id` 會自動存入 Collection Variable `organizationId`。"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Organization by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{organizationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{organizationId}}"
+              ]
+            },
+            "description": "取得單一組織詳情。"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Organization",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{organizationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{organizationId}}"
+              ]
+            },
+            "description": "永久刪除組織。"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Organization Members",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{organizationId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{organizationId}}",
+                "members"
+              ]
+            },
+            "description": "列出組織中的所有使用者成員及其角色。"
+          },
+          "response": []
+        },
+        {
+          "name": "Add Member to Organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{logtoUserId}}\",\n  \"organizationRoleIds\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{organizationId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{organizationId}}",
+                "members"
+              ]
+            },
+            "description": "將 Logto 使用者加入組織，並可選擇指派 Organization Template 中定義的角色。\n\n`organizationRoleIds` 可透過 `GET /organizations/roles` 取得。"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Member from Organization",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{organizationId}}/members/{{logtoUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{organizationId}}",
+                "members",
+                "{{logtoUserId}}"
+              ]
+            },
+            "description": "從組織移除指定成員。"
+          },
+          "response": []
+        }
+      ],
+      "description": "管理 Logto 組織（多租戶架構），包含成員與角色指派。"
+    },
+    {
+      "name": "rbac — RBAC 角色與 API Resources",
+      "item": [
+        {
+          "name": "Get Global Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rbac/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rbac",
+                "roles"
+              ]
+            },
+            "description": "列出 Logto 租戶中所有的全域角色（Global Roles）。\n\n全域角色用於控制 API resource 的存取權限（Type 1: Global API Resource token）。\n\n參考：https://docs.logto.io/authorization/role-based-access-control"
+          },
+          "response": []
+        },
+        {
+          "name": "Get API Resources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rbac/resources",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rbac",
+                "resources"
+              ]
+            },
+            "description": "列出 Logto 中所有已註冊的 API Resources（含 Management API）。\n\n每個 resource 有唯一的 indicator URI 與一組 scopes（permissions）。\n\n參考：https://docs.logto.io/authorization/global-api-resources"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Organization Template",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rbac/organization-template",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rbac",
+                "organization-template"
+              ]
+            },
+            "description": "列出 Organization Template 中定義的組織角色與權限。\n\n所有組織都共用此範本，確保一致的 RBAC 模型。\n\n參考：https://docs.logto.io/authorization/organization-template"
+          },
+          "response": []
+        }
+      ],
+      "description": "查詢 Logto 全域角色、API Resources 及 Organization Template。"
+    },
+    {
+      "name": "/oidc/token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "    try {",
+              "        const response = pm.response.json();",
+              "        // accessToken",
+              "        const access_token = response.access_token;",
+              "        const token_type = response.token_type;",
+              "        console.log(`---> access_token: ${JSON.stringify(access_token)} <---`)",
+              "        if (access_token) {",
+              "            try {",
+              "                pm.collectionVariables.set(\"m2m_access_token\", `${token_type} ${access_token}`);",
+              "            } catch (error) {",
+              "                console.log(`---> error: ${error} <---`)",
+              "            }",
+              "        }",
+              "    } catch (error) {",
+              "        console.error(\"解析回應或存取 response 時發生錯誤:\", error);",
+              "    }",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "type": "text",
+              "key": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "type": "text",
+              "key": "client_id",
+              "value": "{{client_id}}"
+            },
+            {
+              "type": "text",
+              "key": "client_secret",
+              "value": "{{client_secret}}"
+            },
+            {
+              "key": "resource",
+              "value": "http://localhost:3002/api",
+              "type": "text",
+              "uuid": "cfcbe4aa-fdf1-41e5-a1da-1e547a73cad1",
+              "disabled": true
+            },
+            {
+              "type": "text",
+              "key": "resource",
+              "value": "https://default.logto.app/api"
+            },
+            {
+              "type": "text",
+              "key": "scope",
+              "value": "all"
+            }
+          ]
+        },
+        "url": {
+          "raw": "localhost:3001/oidc/token",
+          "host": [
+            "localhost"
+          ],
+          "port": "3001",
+          "path": [
+            "oidc",
+            "token"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/oidc/me",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJFUzM4NCIsInR5cCI6ImF0K2p3dCIsImtpZCI6ImhrNEVTcU1rUTM2ZVJzWExzZlltc2hXVk5PQkdObXZOZmdkaVZjb3FETTgifQ.eyJqdGkiOiJ4SlhrQUlfNmJQTS1qREVhOVB3UjYiLCJzdWIiOiJpOWpkY3RpbGdzZGczMjlhMWhzNmIiLCJpYXQiOjE3NTY4NjU4MTgsImV4cCI6MTc1Njg2OTQxOCwic2NvcGUiOiJhbGwiLCJjbGllbnRfaWQiOiJpOWpkY3RpbGdzZGczMjlhMWhzNmIiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjMwMDEvb2lkYyIsImF1ZCI6Imh0dHBzOi8vZGVmYXVsdC5sb2d0by5hcHAvYXBpIn0.c772mMAidckVhzEcAosBnJY5I_rzQLOrh5O8OXH6upccCn05Xpvl70E0GpGkukpTsQhyx7rUZTT_L86OD47sJG2DidCIsuLPDg2Eu0B27TXY7fquQh0d10TCkyu7be-S",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer eyJhbGciOiJFUzM4NCIsInR5cCI6ImF0K2p3dCIsImtpZCI6ImhrNEVTcU1rUTM2ZVJzWExzZlltc2hXVk5PQkdObXZOZmdkaVZjb3FETTgifQ.eyJqdGkiOiJwRzk5dDlvdFpVYTZFWmJYektDMG8iLCJzdWIiOiJpOWpkY3RpbGdzZGczMjlhMWhzNmIiLCJpYXQiOjE3NTY4NjYzMjMsImV4cCI6MTc1Njg2OTkyMywic2NvcGUiOiJhbGwiLCJjbGllbnRfaWQiOiJpOWpkY3RpbGdzZGczMjlhMWhzNmIiLCJpc3MiOiJodHRwOi8vbG9jYWxob3N0OjMwMDEvb2lkYyIsImF1ZCI6Imh0dHBzOi8vZGVmYXVsdC5sb2d0by5hcHAvYXBpIn0.0Wj8eHmprksAp4Lgej3jUSzWtLACAW0v6flQ0N1UD8SrVPUSSuGeJ-Eh3ihZm5Iv9ZkoOIXIWIH-Vl4yziXNoFztIOJO_6X_XEL8abwY_4zXn3kmXup-eN3sYSHDuxJu",
+            "type": "text",
+            "disabled": true
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "type": "text",
+              "key": "grant_type",
+              "value": "client_credentials",
+              "disabled": true
+            },
+            {
+              "type": "text",
+              "key": "client_id",
+              "value": "i9jdctilgsdg329a1hs6b",
+              "disabled": true
+            },
+            {
+              "type": "text",
+              "key": "client_secret",
+              "value": "x43Avu8P7Pa5qJv5OA92aT6bd9MX1VvC",
+              "disabled": true
+            },
+            {
+              "key": "resource",
+              "value": "https://default.logto.app/api",
+              "type": "text",
+              "uuid": "cfcbe4aa-fdf1-41e5-a1da-1e547a73cad1",
+              "disabled": true
+            },
+            {
+              "type": "text",
+              "key": "resource",
+              "value": "https://default.logto.app/api",
+              "disabled": true
+            },
+            {
+              "type": "text",
+              "key": "scope",
+              "value": "all",
+              "disabled": true
+            }
+          ]
+        },
+        "url": {
+          "raw": "localhost:3001/oidc/me",
+          "host": [
+            "localhost"
+          ],
+          "port": "3001",
+          "path": [
+            "oidc",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/resources",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/resources",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "resources"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/resources/{id}",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/resources/:id",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "resources",
+            ":id"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": "dqqmu43zfdtxwrqnsrewf"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/organizations/{id}/users/{userId}/roles",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/organizations/:id/users/:userId/roles",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "organizations",
+            ":id",
+            "users",
+            ":userId",
+            "roles"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": "{{organizationId}}"
+            },
+            {
+              "key": "userId",
+              "value": "{{logtoUserId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/organizations/{id}/users/{userId}/scopes",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/organizations/:id/users/:userId/scopes",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "organizations",
+            ":id",
+            "users",
+            ":userId",
+            "scopes"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": "{{organizationId}}"
+            },
+            {
+              "key": "userId",
+              "value": "{{logtoUserId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/users/{userId}/roles",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/users/:userId/roles",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            ":userId",
+            "roles"
+          ],
+          "variable": [
+            {
+              "key": "userId",
+              "value": "{{logtoUserId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/users/{userId}/organizations",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/users/:userId/organizations",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            ":userId",
+            "organizations"
+          ],
+          "variable": [
+            {
+              "key": "userId",
+              "value": "{{logtoUserId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/users/{userId}/grants",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/users/:userId/grants?appType=thirdParty",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            ":userId",
+            "grants"
+          ],
+          "query": [
+            {
+              "key": "appType",
+              "value": "thirdParty",
+              "type": "text"
+            },
+            {
+              "key": "appType",
+              "value": "firstParty",
+              "disabled": true
+            }
+          ],
+          "variable": [
+            {
+              "key": "userId",
+              "value": "{{logtoUserId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/users/{userId}/personal-access-tokens",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/users/:userId/personal-access-tokens",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            ":userId",
+            "personal-access-tokens"
+          ],
+          "variable": [
+            {
+              "key": "userId",
+              "value": "{{logtoUserId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/users/{userId}/sessions",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/users/:userId/sessions",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "users",
+            ":userId",
+            "sessions"
+          ],
+          "variable": [
+            {
+              "key": "userId",
+              "value": "{{logtoUserId}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/api/roles/{id}/scopes",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{m2m_access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": []
+        },
+        "url": {
+          "raw": "{{logto_domin}}/api/roles/:id/scopes",
+          "host": [
+            "{{logto_domin}}"
+          ],
+          "path": [
+            "api",
+            "roles",
+            ":id",
+            "scopes"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": "r44v9mujyq5h88re9hsn9"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "logto_domin",
+      "value": ""
+    },
+    {
+      "key": "client_id",
+      "value": ""
+    },
+    {
+      "key": "client_secret",
+      "value": ""
+    },
+    {
+      "key": "m2m_access_token",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "sentryToken",
+      "value": "my-session-token"
+    },
+    {
+      "key": "logtoUserId",
+      "value": ""
+    },
+    {
+      "key": "organizationId",
+      "value": ""
+    },
+    {
+      "key": "resource",
+      "value": ""
+    }
+  ]
+}

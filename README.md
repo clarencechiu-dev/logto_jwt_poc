@@ -1,98 +1,97 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Logto JWT POC — NestJS
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+復刻 hermes-api Logto Experience API flow，並測試 Logto RBAC、Organization、API Resources 功能的 POC 專案。
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 架構設計
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```
+src/
+├── common/
+│   └── logto.config.ts          # ConfigModule 載入 env 設定
+├── logto/
+│   ├── logto.module.ts
+│   └── logto.service.ts         # 所有 Logto HTTP 互動（M2M、Experience API、JWKS）
+└── modules/
+    ├── auth/                    # Experience API Flow（Phone OTP Login）
+    │   ├── dto/
+    │   ├── store/session.store.ts   # In-memory session（POC）
+    │   ├── auth.service.ts
+    │   └── auth.controller.ts
+    ├── token/                   # JWT 驗證與 decode
+    ├── user/                    # User Management（Management API）
+    ├── organization/            # Organization 管理（多租戶）
+    └── rbac/                    # RBAC — 角色、API Resources、Organization Template
 ```
 
-## Compile and run the project
+---
+
+## 快速開始
+
+### 1. 複製環境變數
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cp .env.example .env
 ```
 
-## Run tests
+編輯 `.env`，填入 Logto 設定（參考 `.env.example` 說明）。
+
+### 2. Logto Console 前置設定
+
+1. **建立 API Resource**（indicator = `LOGTO_API_RESOURCE`），定義 scopes
+2. **建立 M2M Application**（Management API 用）→ 填 `LOGTO_CLIENT_ID/SECRET`
+3. **建立 Web Application**（Experience flow 用）→ 填 `LOGTO_WEB_CLIENT_ID/SECRET`，開啟 `offline_access`
+4. （可選）**建立 Organization Template** — 角色、組織權限
+5. （可選）**建立 Global Roles** — 指派 API Resource scopes
+
+### 3. 啟動服務
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
+npm run start:dev
 ```
 
-## Deployment
+- API Server: http://localhost:3000
+- **Swagger UI: http://localhost:3000/api** ← 推薦使用 Swagger 測試
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+---
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## API 一覽
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+### Auth — Experience API Flow（對應 hermes-api）
+
+| 端點 | 對應 hermes-api |
+|---|---|
+| `POST /auth/send-otp` | `sendAuthSmsForSentry` → `initiatePhoneOtpForExperienceFlow` |
+| `POST /auth/verify-otp` | `verifyAuthSmsForSentry` → `verifyPhoneOtpForExperienceFlow` |
+| `POST /auth/exchange` | `exchange` → `submitExperienceAndIssueToken` |
+| `POST /auth/refresh` | `genUserTokens`（支援 org-scoped token） |
+
+### Token — JWT 驗證
+
+| 端點 | 說明 |
+|---|---|
+| `POST /token/validate` | JWKS 驗簽 + iss/aud/scope 驗證 |
+| `GET /token/decode` | Decode JWT claims（不驗簽） |
+
+### Users / Organizations / RBAC
+
+```
+GET/POST/DELETE /users
+GET/POST/DELETE /organizations
+GET/POST/DELETE /organizations/:orgId/members
+GET /rbac/roles
+GET /rbac/resources
+GET /rbac/organization-template
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+## 參考文件
 
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- [Logto RBAC](https://docs.logto.io/zh-TW/authorization/role-based-access-control)
+- [Organization Template](https://docs.logto.io/zh-TW/authorization/organization-template)
+- [Global API Resources](https://docs.logto.io/zh-TW/authorization/global-api-resources)
+- [Validate Access Tokens](https://docs.logto.io/zh-TW/authorization/validate-access-tokens)
+- [Logto OpenAPI](https://openapi.logto.io/)
